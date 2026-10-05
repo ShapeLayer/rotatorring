@@ -4,6 +4,16 @@ namespace Rotatorring;
 
 internal static class Program
 {
+    internal static readonly Icon AppIcon = LoadIcon();
+
+    private static Icon LoadIcon()
+    {
+        using var stream = typeof(Program).Assembly.GetManifestResourceStream("Rotatorring.AppIcon.ico")
+            ?? throw new InvalidOperationException("Application icon resource is missing.");
+        using var icon = new Icon(stream, new Size(32, 32));
+        return (Icon)icon.Clone();
+    }
+
     [STAThread]
     static void Main()
     {
@@ -22,6 +32,7 @@ internal sealed class PickerForm : Form
     private readonly ListBox windows = new() { Dock = DockStyle.Fill };
     public PickerForm()
     {
+        Icon = Program.AppIcon;
         Text = "Rotatorring — 창 선택";
         ClientSize = new Size(560, 400);
         var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 45 };

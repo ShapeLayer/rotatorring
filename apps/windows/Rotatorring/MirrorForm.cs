@@ -24,6 +24,7 @@ internal sealed class MirrorForm : Form
 
     public MirrorForm(WindowItem target)
     {
+        Icon = Program.AppIcon;
         this.target = target;
         Text = $"Rotatorring — {target.Title}";
         ClientSize = new Size(640, 480);

@@ -7,8 +7,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <ApplicationIcon>Resources/AppIcon.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup><InternalsVisibleTo Include="Rotatorring.WindowsTests" /></ItemGroup>
+  <ItemGroup><EmbeddedResource Include="Resources/AppIcon.ico" LogicalName="Rotatorring.AppIcon.ico" /></ItemGroup>
   <ItemGroup><Compile Include="../../../bindings/dotnet/*.cs" Link="Core/%(Filename)%(Extension)" /></ItemGroup>
   <Import Project="../../../bindings/dotnet/NativeCore.targets" />
 </Project>
