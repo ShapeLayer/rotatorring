@@ -26,8 +26,10 @@ Shared geometry changes belong in the C core.
 ## Windows
 
 Requires Windows 10 22H2 or Windows 11. Install the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
-to build, plus CMake 3.20+ and Visual Studio 2022 **Desktop development with C++**
-(MSVC v143). ARM64 publishing additionally requires the **C++ ARM64 build tools**.
+to build, plus Visual Studio 2022 or newer **Desktop development with C++**
+and CMake (3.20+ for VS 2022, or a version supporting your Visual Studio release).
+The build finds CMake on PATH or uses the copy bundled with Visual Studio's
+**C++ CMake tools for Windows**. ARM64 publishing additionally requires the **C++ ARM64 build tools**.
 The .NET build automatically compiles the C core and includes its DLL in the
 output; published executables bundle it with the runtime.
 
@@ -131,13 +133,13 @@ combinations, native struct return values, inverse input mapping and aspect fit.
 They automatically build and copy the host C library (CMake/compiler required):
 
 ```sh
-dotnet run --projecttests/dotnet/CoreInterop -c Release
+dotnet run --project tests/dotnet/CoreInterop -c Release
 ```
 
 Windows rendering/capture smoke tests require a Windows desktop session:
 
 ```powershell
-dotnet run --projecttests/windows/Desktop -c Release
+dotnet run --project tests/windows/Desktop -c Release
 ```
 
 The shared core CI tests C and .NET interop on Linux/macOS and the Swift adapter
