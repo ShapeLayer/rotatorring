@@ -1,0 +1,30 @@
+<Project>
+  <PropertyGroup>
+    <CoreRoot>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../../'))</CoreRoot>
+    <CoreRuntime Condition="'$(RuntimeIdentifier)' == 'win-arm64'">win-arm64</CoreRuntime>
+    <CoreRuntime Condition="'$(CoreRuntime)' == '' and '$(RuntimeIdentifier)' == '' and '$(PROCESSOR_ARCHITECTURE)' == 'ARM64'">win-arm64</CoreRuntime>
+    <CoreRuntime Condition="'$(CoreRuntime)' == ''">win-x64</CoreRuntime>
+  </PropertyGroup>
+  <Target Name="PrepareNativeCore" BeforeTargets="PrepareForBuild">
+    <Error Condition="'$(RuntimeIdentifier)' != '' and '$(RuntimeIdentifier)' != 'win-x64' and '$(RuntimeIdentifier)' != 'win-arm64'"
+           Text="Native core packaging supports win-x64 and win-arm64 runtime identifiers." />
+    <Exec Condition="'$(OS)' == 'Windows_NT' and '$(CoreNativeLibrary)' == ''"
+          Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(CoreRoot)scripts/build-core.ps1&quot; -Runtime $(CoreRuntime)" />
+    <PropertyGroup Condition="'$(OS)' == 'Windows_NT' and '$(CoreNativeLibrary)' == ''">
+      <CoreNativeLibrary>$(CoreRoot)build/core/$(CoreRuntime)/Release/RotatorringCore.dll</CoreNativeLibrary>
+    </PropertyGroup>
+    <Error Condition="'$(OS)' != 'Windows_NT' and $(RuntimeIdentifier.StartsWith('win-')) and '$(CoreNativeLibrary)' == ''"
+           Text="Cross-publishing requires a matching Windows C core DLL. Build on Windows or supply -p:CoreNativeLibrary=/path/to/RotatorringCore.dll." />
+    <Exec Condition="'$(OS)' != 'Windows_NT' and '$(TargetFramework)' == 'net10.0' and '$(CoreNativeLibrary)' == ''"
+          Command="sh &quot;$(CoreRoot)scripts/build-core.sh&quot;" />
+    <PropertyGroup Condition="'$(OS)' != 'Windows_NT' and '$(TargetFramework)' == 'net10.0' and '$(CoreNativeLibrary)' == ''">
+      <CoreNativeLibrary Condition="$([MSBuild]::IsOSPlatform('OSX'))">$(CoreRoot)build/core/host/libRotatorringCore.dylib</CoreNativeLibrary>
+      <CoreNativeLibrary Condition="$([MSBuild]::IsOSPlatform('Linux'))">$(CoreRoot)build/core/host/libRotatorringCore.so</CoreNativeLibrary>
+    </PropertyGroup>
+    <Error Condition="'$(CoreNativeLibrary)' != '' and !Exists('$(CoreNativeLibrary)')" Text="C core library missing: $(CoreNativeLibrary)" />
+    <ItemGroup Condition="'$(CoreNativeLibrary)' != ''">
+      <None Include="$(CoreNativeLibrary)" Link="$([System.IO.Path]::GetFileName('$(CoreNativeLibrary)'))"
+            CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    </ItemGroup>
+  </Target>
+</Project>

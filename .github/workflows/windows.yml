@@ -1,0 +1,29 @@
+name: Windows
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Coordinate tests
+        run: dotnet run --project tests/dotnet/CoreInterop -c Release
+      - name: Build
+        run: dotnet build apps/windows/Rotatorring/Rotatorring.csproj -c Release
+      - name: Windows rendering and capture smoke tests
+        run: dotnet run --project tests/windows/Desktop -c Release
+      - name: Publish x64
+        shell: pwsh
+        run: ./scripts/build-windows.ps1 -Runtime win-x64
+      - name: Publish ARM64
+        shell: pwsh
+        run: ./scripts/build-windows.ps1 -Runtime win-arm64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Rotatorring-Windows
+          path: build/windows/
