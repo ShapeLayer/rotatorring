@@ -16,6 +16,7 @@ internal static class SmokeTests
             try
             {
                 Rendering();
+                await ChromeTests.Run(fixture);
                 var pending = Task.Run(() => Native.Capture(fixture.Handle));
                 if (await Task.WhenAny(pending, Task.Delay(10000)) != pending) throw new Exception("Capture timeout");
                 using var capture = await pending ?? throw new Exception("Capture returned no frame");

@@ -17,6 +17,13 @@ jobs:
         run: dotnet build apps/windows/Rotatorring/Rotatorring.csproj -c Release
       - name: Windows rendering and capture smoke tests
         run: dotnet run --project tests/windows/Desktop -c Release
+      - name: Upload Windows UI verification screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Rotatorring-Windows-UI
+          path: tests/windows/Desktop/bin/Release/net10.0-windows/ui-artifacts/
+          if-no-files-found: ignore
       - name: Publish x64
         shell: pwsh
         run: ./scripts/build-windows.ps1 -Runtime win-x64

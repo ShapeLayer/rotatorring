@@ -48,9 +48,17 @@ For Windows on ARM:
 ```
 
 For development, use `dotnet run --project apps/windows/Rotatorring`.
-Select a window and double-click, press Enter, or click **미러 열기**.
-Use **새로 고침** to refresh the list. The picker stays open to create more mirrors;
+Select a window and double-click, press Enter, or click **미러링 시작**.
+Use **새로고침** to refresh the list. The picker stays open to create more mirrors;
 closing the picker exits the app.
+
+The compact top toolbar follows the macOS action order: rotate left, rotate
+right, flip horizontally, flip vertically, reset and always on top. Buttons use
+scalable monochrome icons, accessible labels and shortcut tooltips. Flip and pin
+buttons show their current state. Orientation, zoom and source dimensions appear
+beside the toolbar; the old menu bar and bottom status strip are removed. The
+**더 보기** (…) menu contains transforms, zoom, follow-source, input and new-mirror
+actions. The picker shows app icons/name, window title and client dimensions.
 
 - Rotate right Ctrl+R, rotate left Ctrl+L, flip horizontally Ctrl+Shift+H,
   flip vertically Ctrl+Shift+V, reset Ctrl+Shift+R.
@@ -58,10 +66,12 @@ closing the picker exits the app.
 - Follow source client size Ctrl+Alt+F; resizing changes zoom while following
   is enabled. With following disabled, the image fits with letterboxing.
 - Always on top Ctrl+Alt+T.
-- **입력 전달** toggles background input forwarding. Clicks, drags, middle/right
+- New mirror Ctrl+N opens the existing picker. **입력 전달** (Ctrl+Alt+I) toggles background input forwarding. Clicks, drags, middle/right
   buttons, wheel scrolling, text and key messages go to the source client area,
   undoing rotation and flips. Click a source control in the mirror before typing.
-  App menu shortcuts take precedence over forwarded keys.
+  App shortcuts take precedence over forwarded keys. With input forwarding off,
+  right-click opens the same action menu; with forwarding on, right-click goes to
+  the source. Windows keeps its native title bar and window controls.
 
 ### Windows limitations
 
@@ -136,7 +146,11 @@ They automatically build and copy the host C library (CMake/compiler required):
 dotnet run --project tests/dotnet/CoreInterop -c Release
 ```
 
-Windows rendering/capture smoke tests require a Windows desktop session:
+Windows rendering/capture and toolbar/picker UI tests require a Windows desktop
+session. Tests check all six icon actions, checked/disabled state, shared menu
+state, zoom steps, new-mirror navigation and layout at multiple widths. They save
+PNG screenshots in the test output's `ui-artifacts/` directory, uploaded by CI as
+`Rotatorring-Windows-UI`:
 
 ```powershell
 dotnet run --project tests/windows/Desktop -c Release

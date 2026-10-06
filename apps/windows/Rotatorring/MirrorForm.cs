@@ -8,9 +8,15 @@ internal sealed class MirrorForm : Form
     private readonly WindowItem target;
     private readonly MirrorCanvas canvas = new() { Dock = DockStyle.Fill };
     private readonly System.Windows.Forms.Timer timer = new() { Interval = 33 };
-    private readonly ToolStripStatusLabel status = new();
-    private readonly ToolStripMenuItem follow = new("원본 크기 따라가기") { Checked = true, CheckOnClick = true };
-    private readonly ToolStripMenuItem input = new("입력 전달") { Checked = true, CheckOnClick = true };
+    private readonly MirrorChrome chrome;
+    private bool followsSource = true, inputEnabled = true;
+    private readonly Action showPicker;
+    internal MirrorChrome Chrome => chrome;
+    internal Orientation CurrentOrientation => orientation;
+    internal bool FollowsSource => followsSource;
+    internal bool InputEnabled => inputEnabled;
+    internal double Zoom => zoom;
+    private static readonly double[] ZoomSteps = [0.25, 0.33, 0.5, 0.67, 0.75, 1, 1.25, 1.5, 2, 3, 4];
     private Orientation orientation;
     private Size sourceSize;
     private double zoom = 1;
@@ -22,40 +28,22 @@ internal sealed class MirrorForm : Form
     private readonly HashSet<Keys> shortcutKeys = [];
     private Native.Point lastMousePoint;
 
-    public MirrorForm(WindowItem target)
+    public MirrorForm(WindowItem target, Action? showPicker = null)
     {
         Icon = Program.AppIcon;
         this.target = target;
-        Text = $"Rotatorring — {target.Title}";
+        this.showPicker = showPicker ?? Program.ShowPicker;
+        Text = target.Title;
         ClientSize = new Size(640, 480);
-        MinimumSize = new Size(180, 180);
-        var menu = new MenuStrip();
-        var transform = new ToolStripMenuItem("변환");
-        AddAction(transform, "오른쪽 회전", Keys.Control | Keys.R, () => Change(orientation.Rotate(1)));
-        AddAction(transform, "왼쪽 회전", Keys.Control | Keys.L, () => Change(orientation.Rotate(-1)));
-        AddAction(transform, "좌우 반전", Keys.Control | Keys.Shift | Keys.H, () => Change(orientation with { FlipHorizontal = !orientation.FlipHorizontal }));
-        AddAction(transform, "상하 반전", Keys.Control | Keys.Shift | Keys.V, () => Change(orientation with { FlipVertical = !orientation.FlipVertical }));
-        AddAction(transform, "초기화", Keys.Control | Keys.Shift | Keys.R, () => Change(new()));
-        var view = new ToolStripMenuItem("보기");
-        AddAction(view, "실제 크기", Keys.Control | Keys.D0, () => SetZoom(1));
-        AddAction(view, "확대", Keys.Control | Keys.Oemplus, () => SetZoom(Math.Min(4, zoom * 1.25)));
-        AddAction(view, "축소", Keys.Control | Keys.OemMinus, () => SetZoom(Math.Max(0.25, zoom / 1.25)));
-        follow.ShortcutKeys = Keys.Control | Keys.Alt | Keys.F;
-        shortcutKeys.Add(Keys.F);
-        shortcutKeys.Add(Keys.T);
-        follow.CheckedChanged += (_, _) => ApplySize();
-        view.DropDownItems.Add(follow);
-        var floating = new ToolStripMenuItem("항상 위에 표시") { CheckOnClick = true, ShortcutKeys = Keys.Control | Keys.Alt | Keys.T };
-        floating.CheckedChanged += (_, _) => TopMost = floating.Checked;
-        view.DropDownItems.Add(floating);
-        input.CheckedChanged += (_, _) => { if (!input.Checked) ReleaseInput(); canvas.Focus(); };
-        menu.Items.AddRange([transform, view, input]);
-        var statusStrip = new StatusStrip();
-        statusStrip.Items.Add(status);
+        MinimumSize = new Size(380, 200);
+        AutoScaleMode = AutoScaleMode.Dpi;
+        BackColor = Color.Black;
+        chrome = new MirrorChrome(BuildActions());
         Controls.Add(canvas);
-        Controls.Add(statusStrip);
-        Controls.Add(menu);
-        MainMenuStrip = menu;
+        Controls.Add(chrome);
+        canvas.ContextMenuStrip = chrome.CreateContextMenu();
+        canvas.ContextMenuStrip.Opening += (_, e) => { if (inputEnabled) e.Cancel = true; };
+        UpdateSubtitle();
         canvas.MouseDown += (_, e) => Mouse(e, true, false);
         canvas.MouseUp += (_, e) => Mouse(e, false, true);
         canvas.MouseMove += (_, e) => Mouse(e, false, false);
@@ -66,23 +54,59 @@ internal sealed class MirrorForm : Form
         Deactivate += (_, _) => ReleaseInput();
         Resize += (_, _) =>
         {
-            if (!resizing && follow.Checked && sourceSize.Width > 0)
+            if (!resizing && followsSource && sourceSize.Width > 0)
             {
                 var size = DisplayedSize();
                 zoom = Math.Clamp(Math.Min((double)canvas.Width / size.Width, (double)canvas.Height / size.Height), 0.1, 8);
+                UpdateSubtitle();
             }
         };
         timer.Tick += async (_, _) => await CaptureFrame();
         Shown += (_, _) => { canvas.Focus(); timer.Start(); };
-        FormClosed += (_, _) => { ReleaseInput(); timer.Dispose(); canvas.Frame = null; };
+        FormClosed += (_, _) => { ReleaseInput(); timer.Dispose(); canvas.Frame = null; canvas.ContextMenuStrip?.Dispose(); };
     }
 
-    private void AddAction(ToolStripMenuItem parent, string text, Keys keys, Action action)
+    private IEnumerable<MirrorAction> BuildActions()
     {
-        shortcutKeys.Add(keys & Keys.KeyCode);
-        var item = new ToolStripMenuItem(text) { ShortcutKeys = keys };
-        item.Click += (_, _) => { action(); canvas.Focus(); };
-        parent.DropDownItems.Add(item);
+        MirrorAction Action(MirrorCommand id, string label, Keys shortcut, Action action, Func<bool>? check = null, Func<bool>? enabled = null)
+        {
+            shortcutKeys.Add(shortcut & Keys.KeyCode);
+            return new(id, label, shortcut, () => { ReleaseInput(); action(); UpdateSubtitle(); if (id != MirrorCommand.NewMirror) canvas.Focus(); }, check, enabled);
+        }
+        yield return Action(MirrorCommand.RotateLeft, "왼쪽으로 회전", Keys.Control | Keys.L, () => Change(orientation.Rotate(-1)));
+        yield return Action(MirrorCommand.RotateRight, "오른쪽으로 회전", Keys.Control | Keys.R, () => Change(orientation.Rotate(1)));
+        yield return Action(MirrorCommand.FlipHorizontal, "좌우 반전", Keys.Control | Keys.Shift | Keys.H,
+            () => Change(orientation with { FlipHorizontal = !orientation.FlipHorizontal }), () => orientation.FlipHorizontal);
+        yield return Action(MirrorCommand.FlipVertical, "상하 반전", Keys.Control | Keys.Shift | Keys.V,
+            () => Change(orientation with { FlipVertical = !orientation.FlipVertical }), () => orientation.FlipVertical);
+        yield return Action(MirrorCommand.Reset, "원래대로", Keys.Control | Keys.Shift | Keys.R, () => Change(new()),
+            enabled: () => orientation != new Orientation());
+        yield return Action(MirrorCommand.Floating, "항상 위에 표시", Keys.Control | Keys.Alt | Keys.T, () => TopMost = !TopMost, () => TopMost);
+        yield return Action(MirrorCommand.ActualSize, "실제 크기", Keys.Control | Keys.D0, () => SetZoom(1));
+        yield return Action(MirrorCommand.ZoomIn, "확대", Keys.Control | Keys.Oemplus,
+            () => SetZoom(ZoomSteps.FirstOrDefault(v => v > zoom + 0.001, ZoomSteps[^1])));
+        yield return Action(MirrorCommand.ZoomOut, "축소", Keys.Control | Keys.OemMinus,
+            () => SetZoom(ZoomSteps.LastOrDefault(v => v < zoom - 0.001, ZoomSteps[0])));
+        yield return Action(MirrorCommand.FollowSource, "원본 크기 따라가기", Keys.Control | Keys.Alt | Keys.F,
+            () => { followsSource = !followsSource; ApplySize(); }, () => followsSource);
+        yield return Action(MirrorCommand.Input, "입력 전달", Keys.Control | Keys.Alt | Keys.I, () => inputEnabled = !inputEnabled, () => inputEnabled);
+        yield return Action(MirrorCommand.NewMirror, "새 미러", Keys.Control | Keys.N, showPicker);
+    }
+
+    protected override bool ProcessCmdKey(ref Message message, Keys keys) => chrome.ExecuteShortcut(keys) || base.ProcessCmdKey(ref message, keys);
+
+    private void UpdateSubtitle()
+    {
+        var parts = new List<string>();
+        if (orientation.QuarterTurns != 0) parts.Add($"{orientation.QuarterTurns * 90}°");
+        if (orientation.FlipHorizontal) parts.Add("좌우 반전");
+        if (orientation.FlipVertical) parts.Add("상하 반전");
+        if (parts.Count == 0) parts.Add("원본 방향");
+        parts.Add(followsSource ? $"{zoom:P0}" : "자유 크기");
+        if (!sourceSize.IsEmpty) parts.Add($"원본 {sourceSize.Width}×{sourceSize.Height}");
+        if (!inputEnabled) parts.Add("입력 꺼짐");
+        chrome.SetSubtitle(string.Join(" · ", parts));
+        chrome.Synchronize();
     }
 
     private void Change(Orientation value)
@@ -93,7 +117,7 @@ internal sealed class MirrorForm : Form
         ApplySize();
         canvas.Invalidate();
     }
-    private void SetZoom(double value) { zoom = value; follow.Checked = true; ApplySize(); }
+    private void SetZoom(double value) { zoom = value; followsSource = true; ApplySize(); }
     private Size DisplayedSize()
     {
         var size = orientation.DisplayedSize(sourceSize.Width, sourceSize.Height);
@@ -101,7 +125,7 @@ internal sealed class MirrorForm : Form
     }
     private void ApplySize()
     {
-        if (!follow.Checked || sourceSize.IsEmpty) return;
+        if (!followsSource || sourceSize.IsEmpty) return;
         var size = DisplayedSize();
         var area = Screen.FromControl(this).WorkingArea;
         int chromeWidth = Width - canvas.Width, chromeHeight = Height - canvas.Height;
@@ -122,7 +146,7 @@ internal sealed class MirrorForm : Form
             timer.Stop();
             ReleaseInput();
             canvas.Frame = null;
-            status.Text = "원본 창이 닫혔습니다. 창 선택 화면에서 새 미러를 여세요.";
+            ShowMessage("원본 창이 닫혔습니다. 창 선택 화면에서 새 미러를 여세요.");
             return;
         }
         capturing = true;
@@ -134,28 +158,35 @@ internal sealed class MirrorForm : Form
             {
                 ReleaseInput();
                 canvas.Frame = null;
-                status.Text = "캡처 불가: 최소화 상태 또는 캡처를 지원하지 않는 창입니다.";
+                ShowMessage("캡처 불가: 최소화 상태 또는 캡처를 지원하지 않는 창입니다.");
                 return;
             }
             bool sizeChanged = frame.Size != sourceSize;
             sourceSize = frame.Size;
             canvas.Frame = frame;
+            canvas.Message = null;
             if (sizeChanged) ApplySize();
-            status.Text = $"{orientation.QuarterTurns * 90}° · {zoom:P0} · {sourceSize.Width}×{sourceSize.Height} · 입력 {(input.Checked ? "켜짐" : "꺼짐")}";
+            UpdateSubtitle();
         }
         catch (Exception ex) when (ex is ArgumentException or System.Runtime.InteropServices.ExternalException)
         {
-            if (!IsDisposed) status.Text = $"캡처 실패: {ex.Message}";
+            if (!IsDisposed) ShowMessage($"캡처 실패: {ex.Message}");
         }
         finally { capturing = false; }
     }
 
-    private bool CanForward => input.Checked && Native.OwnedBy(target.Handle, target.Process);
+    private void ShowMessage(string message)
+    {
+        chrome.SetSubtitle(message);
+        canvas.Message = message;
+    }
+
+    private bool CanForward => inputEnabled && Native.OwnedBy(target.Handle, target.Process);
     private bool Post(nint handle, uint message, nuint data, nint position)
     {
         if (!Native.OwnedBy(handle, target.Process)) return false;
         if (Native.PostMessage(handle, message, data, position)) return true;
-        status.Text = "입력 전달 실패: 대상 앱의 권한 또는 메시지 지원을 확인하세요.";
+        ShowMessage("입력 전달 실패: 대상 앱의 권한 또는 메시지 지원을 확인하세요.");
         return false;
     }
 
@@ -252,6 +283,9 @@ internal sealed class MirrorForm : Form
 internal sealed class MirrorCanvas : Control
 {
     private Bitmap? frame;
+    private string? message = "원본 창 캡처를 시작하는 중…";
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public string? Message { get => message; set { message = value; Invalidate(); } }
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public Orientation Orientation { get; set; }
     [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
@@ -289,7 +323,12 @@ internal sealed class MirrorCanvas : Control
     protected override void OnPaint(PaintEventArgs e)
     {
         base.OnPaint(e);
-        if (frame is null) return;
+        if (frame is null)
+        {
+            if (message is not null) TextRenderer.DrawText(e.Graphics, message, Font, Rectangle.Inflate(ClientRectangle, -24, -24),
+                SystemColors.GrayText, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.WordBreak);
+            return;
+        }
         var rect = ImageRect;
         var state = e.Graphics.Save();
         e.Graphics.InterpolationMode = InterpolationMode.HighQualityBilinear;
